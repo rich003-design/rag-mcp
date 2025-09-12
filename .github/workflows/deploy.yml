@@ -2,38 +2,54 @@ name: Deploy to Cloud Run
 
 on:
   push:
-    branches: [feature/ragmcpclient]
+    branches:
+      - "feature/ragmcpclient"   # run only on this branch
+      # - "main"                 # uncomment if you also want main
 
 env:
-  PROJECT_ID: ${{secrets.GCP_PROJECT_ID}}
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: northamerica-northeast1
   SERVICE: rag-client
-  IMAGE: northamerica-northeast1-docker.pkg.dev/${{secrets.GCP_PROJECT_ID}}/rag-repo/rag-client
+  IMAGE: northamerica-northeast1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/rag-repo/rag-client
 
 jobs:
   build-deploy:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Authenticate with GCP
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate with GCP (JSON key)
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{secrets.GCP_SA_KEY}}
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      - name: Set up gcloud
+      - name: Set up gcloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Build and Push Image
+      - name: Set active project
+        run: gcloud config set project "$PROJECT_ID"
+
+      # Optional: Only needed if you do local docker pushes. Cloud Build handles pushing for us.
+      # - name: Configure docker for Artifact Registry
+      #   run: gcloud auth configure-docker $REGION-docker.pkg.dev --quiet
+
+      - name: Build and Push with Cloud Build
         run: |
-          gcloud builds submit --tag $IMAGE:${{github.sha}}
+          gcloud builds submit \
+            --project "$PROJECT_ID" \
+            --tag "$IMAGE:${{ github.sha }}" \
+            .
 
       - name: Deploy to Cloud Run
         run: |
-          gcloud run deploy $SERVICE \
-            --image $IMAGE:${{github.sha}} \
-            --region $REGION \
+          gcloud run deploy "$SERVICE" \
+            --project "$PROJECT_ID" \
+            --image "$IMAGE:${{ github.sha }}" \
+            --region "$REGION" \
             --platform managed \
             --allow-unauthenticated \
             --concurrency 10 \
-            --max-instances 3
+            --max-instances 3 \
+            --port 8080
