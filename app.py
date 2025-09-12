@@ -10,7 +10,7 @@ def health():
     return {"ok": True}
 
 # Optional: a trigger endpoint you can hit if you want to run your RAG flow from the web.
-# Keep it quick; avoid long-running CPU here. Defining the workflow function.
+# Keep it quick; avoid long-running CPU here. Defining the workflow function. This will run the app.
 @app.post("/run")
 def run_workflow():
     # TODO: call a lightweight function or queue a background task
