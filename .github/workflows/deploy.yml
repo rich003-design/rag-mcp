@@ -4,12 +4,13 @@ on:
   push:
     branches:
       - "feature/ragmcpclient"   # run only on this branch
-      # - "main"                 # uncomment if you also want main
+      # - "main"                 # uncomment if you also want deploys from main
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: northamerica-northeast1
   SERVICE: rag-client
+  REPO: rag-repo
   IMAGE: northamerica-northeast1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/rag-repo/rag-client
 
 jobs:
@@ -17,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout source
         uses: actions/checkout@v4
 
       - name: Authenticate with GCP (JSON key)
@@ -28,54 +29,29 @@ jobs:
       - name: Set up gcloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Set active project
-        run: gcloud config set project "$PROJECT_ID"
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker $REGION-docker.pkg.dev --quiet
 
-      # Build asynchronously (no log streaming) and poll until completion
-      - name: Build with Cloud Build (async) and poll
-        env:
-          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          REGION: northamerica-northeast1
-          IMAGE: northamerica-northeast1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/rag-repo/rag-client
+      - name: Build Docker image
         run: |
-          set -e
-          BUILD_ID=$(gcloud builds submit \
-            --project "$PROJECT_ID" \
-            --tag "$IMAGE:${{ github.sha }}" \
-            --async \
-            --format='value(metadata.build.id)' \
-            .)
+          echo "Building Docker image..."
+          docker build -t "$IMAGE:${{ github.sha }}" .
 
-          echo "Build started: $BUILD_ID"
-          echo "View logs: https://console.cloud.google.com/cloud-build/builds/${BUILD_ID}?project=${PROJECT_ID}"
-
-          # Poll status until build finishes
-          while true; do
-            STATUS=$(gcloud builds describe "$BUILD_ID" --project "$PROJECT_ID" --format='value(status)')
-            echo "Status: $STATUS"
-            if [ "$STATUS" = "SUCCESS" ]; then
-              break
-            elif [ "$STATUS" = "FAILURE" ] || [ "$STATUS" = "CANCELLED" ] || [ "$STATUS" = "TIMEOUT" ]; then
-              echo "Build failed with status: $STATUS"
-              exit 1
-            fi
-            sleep 5
-          done
+      - name: Push Docker image
+        run: |
+          echo "Pushing Docker image to Artifact Registry..."
+          docker push "$IMAGE:${{ github.sha }}"
 
       - name: Deploy to Cloud Run
-        env:
-          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          REGION: northamerica-northeast1
-          SERVICE: rag-client
-          IMAGE: northamerica-northeast1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/rag-repo/rag-client
         run: |
+          echo "Deploying to Cloud Run..."
           gcloud run deploy "$SERVICE" \
             --project "$PROJECT_ID" \
             --image "$IMAGE:${{ github.sha }}" \
             --region "$REGION" \
             --platform managed \
             --allow-unauthenticated \
+            --port 8080 \
             --concurrency 10 \
             --max-instances 3 \
-            --min-instances 0 \
-            --port 8080
+            --min-instances 0
