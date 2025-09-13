@@ -31,18 +31,43 @@ jobs:
       - name: Set active project
         run: gcloud config set project "$PROJECT_ID"
 
-      # Optional: Only needed if you do local docker pushes. Cloud Build handles pushing for us.
-      # - name: Configure docker for Artifact Registry!!!!
-      #   run: gcloud auth configure-docker $REGION-docker.pkg.dev --quiet
-
-      - name: Build and Push with Cloud Build
+      # Build asynchronously (no log streaming) and poll until completion
+      - name: Build with Cloud Build (async) and poll
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: northamerica-northeast1
+          IMAGE: northamerica-northeast1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/rag-repo/rag-client
         run: |
-          gcloud builds submit \
+          set -e
+          BUILD_ID=$(gcloud builds submit \
             --project "$PROJECT_ID" \
             --tag "$IMAGE:${{ github.sha }}" \
-            .
+            --async \
+            --format='value(metadata.build.id)' \
+            .)
+
+          echo "Build started: $BUILD_ID"
+          echo "View logs: https://console.cloud.google.com/cloud-build/builds/${BUILD_ID}?project=${PROJECT_ID}"
+
+          # Poll status until build finishes
+          while true; do
+            STATUS=$(gcloud builds describe "$BUILD_ID" --project "$PROJECT_ID" --format='value(status)')
+            echo "Status: $STATUS"
+            if [ "$STATUS" = "SUCCESS" ]; then
+              break
+            elif [ "$STATUS" = "FAILURE" ] || [ "$STATUS" = "CANCELLED" ] || [ "$STATUS" = "TIMEOUT" ]; then
+              echo "Build failed with status: $STATUS"
+              exit 1
+            fi
+            sleep 5
+          done
 
       - name: Deploy to Cloud Run
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: northamerica-northeast1
+          SERVICE: rag-client
+          IMAGE: northamerica-northeast1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/rag-repo/rag-client
         run: |
           gcloud run deploy "$SERVICE" \
             --project "$PROJECT_ID" \
@@ -52,4 +77,5 @@ jobs:
             --allow-unauthenticated \
             --concurrency 10 \
             --max-instances 3 \
+            --min-instances 0 \
             --port 8080
