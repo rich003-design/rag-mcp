@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - "feature/ragmcpclient"   # run only on this branch
-      # - "main"                 # uncomment if you also want deploys from main
+      # - "main"                 # uncomment if you also want deploys from main branch
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
