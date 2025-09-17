@@ -12,7 +12,7 @@ from mcp_agent.workflows.llm.augmented_llm_openai import OpenAIAugmentedLLM
 
 logger = logging.getLogger("rag")
 logging.basicConfig(level=logging.INFO)
-
+# This will initialize the app
 app = FastAPI(title="RAG MCP Client")
 
 # Create one global MCPApp; connect to the rag-memory MCP server when needed
